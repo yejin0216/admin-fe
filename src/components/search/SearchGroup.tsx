@@ -1,22 +1,16 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { TStringObj } from 'types/types';
-
-export const INPUT_LABEL: TStringObj<string> = {
-  name: '회원명',
-  customerNo: '특허고객번호',
-  userType: '회원종류',
-  status: '상태',
-  joinDate: '가입날짜'
-};
+import { INPUT_LABEL } from './constants';
 
 export interface IProps {
   children: React.ReactNode;
   handleReset: () => void;
-  handleSearch: () => void;
+  handleSearch: (_condition: TStringObj) => void;
 }
 
 const SearchGroup = ({ children, handleReset, handleSearch }: IProps) => {
-  const [searchConditions, setSearchConditions] = useState<TStringObj<string> | undefined>();
+  const [searchConditions, setSearchConditions] = useState<TStringObj>({});
+  const selectRef = useRef<{ [id: string]: HTMLSelectElement }>({});
 
   const handleChange = (e: React.MouseEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { id, value } = e.currentTarget;
@@ -27,28 +21,29 @@ const SearchGroup = ({ children, handleReset, handleSearch }: IProps) => {
   };
 
   const onReset = () => {
-    setSearchConditions(undefined);
+    setSearchConditions({});
     handleReset();
   };
 
-  const handleEnter = (e: React.KeyboardEvent) => {
-    if (e.code === 'Enter') handleSearch();
+  const onSearch = async () => {
+    const merged = { ...searchConditions };
+    Object.values(selectRef.current).forEach((ref) => {
+      Object.assign(merged, { [ref.id]: ref.value });
+    });
+    setSearchConditions(merged);
+    handleSearch(merged);
   };
 
-  return (
-    <section className='set-util-box'>
-      <div className='l-side'>
-        <button type='button' className='btn-ok-exec' onClick={onReset}>
-          초기화
-        </button>
-        <button type='button' className='btn-ok-exec' onClick={handleSearch}>
-          조회
-        </button>
-      </div>
-      {React.Children.map(children, (child, index) => {
-        if (!React.isValidElement(child)) return null;
-        if (!child.props || !child.props.id) return null;
-        const { id, required } = child.props;
+  const handleEnter = (e: React.KeyboardEvent) => {
+    if (e.code === 'Enter') handleSearch(searchConditions);
+  };
+
+  const renderChildNode = useCallback(
+    (child: React.ReactElement, autoFocus: boolean) => {
+      const { props, type: nodeType } = child;
+      const { id, required } = props;
+
+      if (nodeType === 'select') {
         return (
           <>
             <label htmlFor={id} className='label-block'>
@@ -57,13 +52,55 @@ const SearchGroup = ({ children, handleReset, handleSearch }: IProps) => {
             </label>
             <child.type
               {...child.props}
-              value={searchConditions ? searchConditions[id] : ''}
+              // eslint-disable-next-line no-return-assign
+              ref={(el: HTMLSelectElement) => (selectRef.current[id] = el)}
               onKeyUp={handleEnter}
-              onChange={handleChange}
-              autoFocus={index === 0}
+              autoFocus={autoFocus}
             />
           </>
         );
+      }
+
+      return (
+        <>
+          <label htmlFor={id} className='label-block'>
+            {INPUT_LABEL[id]}
+            {required && <span className='point'>(필수입력)</span>}
+          </label>
+          <child.type
+            {...child.props}
+            value={searchConditions[id] || ''}
+            onKeyUp={handleEnter}
+            onChange={handleChange}
+            autoFocus={autoFocus}
+          />
+        </>
+      );
+    },
+    [searchConditions, handleEnter, handleChange]
+  );
+
+  return (
+    <section className='set-util-box'>
+      <div className='l-side'>
+        <button type='button' className='btn-ok-exec' onClick={onReset}>
+          초기화
+        </button>
+        <button type='button' className='btn-ok-exec' onClick={onSearch}>
+          조회
+        </button>
+      </div>
+      {React.Children.map(children, (child, index) => {
+        if (!React.isValidElement(child)) {
+          return null;
+        }
+        if (child.type === React.Fragment) {
+          const nodes = child.props.children.map((node: React.ReactElement, index: number) =>
+            renderChildNode(node, index === 0)
+          );
+          return nodes;
+        }
+        return renderChildNode(child, index === 0);
       })}
     </section>
   );
